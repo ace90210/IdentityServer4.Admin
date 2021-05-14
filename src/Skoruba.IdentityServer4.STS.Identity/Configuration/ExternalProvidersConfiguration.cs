@@ -14,5 +14,7 @@
         public string AzureInstance { get; set; }
         public string AzureAdCallbackPath { get; set; }
         public string AzureDomain { get; set; }
+
+        public OidcProvider[] AdditionaProviders { get; set; }
     }
 }

@@ -407,6 +407,38 @@ namespace Skoruba.IdentityServer4.STS.Identity.Helpers
                     options.CallbackPath = externalProviderConfiguration.AzureAdCallbackPath;
                 });
             }
+
+            if(externalProviderConfiguration.AdditionaProviders != null)
+            {
+                foreach (var provider in externalProviderConfiguration.AdditionaProviders)
+                {
+                    if(provider.Enabled)
+                    {
+                        authenticationBuilder.AddOpenIdConnect(provider.ClientId, provider.DisplayName, options =>
+                        {
+                            options.Authority = provider.Authority;
+
+                            options.ClientId = provider.ClientId;
+                            options.ClientSecret = provider.ClientSecret;
+
+                            options.ResponseType = "code";
+
+                            //Each provider must provide its own callback path to avoid conflicts
+                            options.CallbackPath = "/signin-oidc-" + provider.ClientId;
+
+                            options.SaveTokens = provider.SaveToken;
+
+                            if(provider.Scopes?.Count > 0)
+                            {
+                                foreach(var scope in provider.Scopes)
+                                {
+                                    options.Scope.Add(scope);
+                                }
+                            }
+                        });
+                    }
+                }
+            }
         }
 
         /// <summary>

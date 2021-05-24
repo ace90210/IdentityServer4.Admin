@@ -95,7 +95,7 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
             if (vm.EnableLocalLogin == false && vm.ExternalProviders.Count() == 1)
             {
                 // only one option for logging in
-                return ExternalLogin(vm.ExternalProviders.First().AuthenticationScheme, returnUrl);
+                return ExternalLogin(vm.ExternalProviders.First().AuthenticationScheme, returnUrl, vm.ClientId);
             }
 
             return View(vm);
@@ -375,6 +375,14 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> ExternalLoginCallback(string returnUrl = null, string remoteError = null)
         {
+            var context = await _interaction.GetAuthorizationContextAsync(returnUrl);
+            string clientId = null;
+
+            if(context != null)
+            {
+                clientId = context.Client?.ClientId;
+            }
+
             if (remoteError != null)
             {
                 ModelState.AddModelError(string.Empty, _localizer["ErrorExternalProvider", remoteError]);
@@ -405,6 +413,7 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
             // If the user does not have an account, then ask the user to create an account.
             ViewData["ReturnUrl"] = returnUrl;
             ViewData["LoginProvider"] = info.LoginProvider;
+            ViewData["ClientId"] = clientId;
             var email = info.Principal.FindFirstValue(ClaimTypes.Email);
             var userName = info.Principal.Identity.Name;
 
@@ -414,10 +423,10 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
         [HttpPost]
         [HttpGet]
         [AllowAnonymous]
-        public IActionResult ExternalLogin(string provider, string returnUrl = null)
+        public IActionResult ExternalLogin(string provider, string returnUrl = null, string clientId = null)
         {
             // Request a redirect to the external login provider.
-            var redirectUrl = Url.Action("ExternalLoginCallback", "Account", new { ReturnUrl = returnUrl });
+            var redirectUrl = Url.Action("ExternalLoginCallback", "Account", new { ReturnUrl = returnUrl, ClientId = clientId });
             var properties = _signInManager.ConfigureExternalAuthenticationProperties(provider, redirectUrl);
 
             return Challenge(properties, provider);
@@ -426,7 +435,7 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
         [HttpPost]
         [AllowAnonymous]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> ExternalLoginConfirmation(ExternalLoginConfirmationViewModel model, string returnUrl = null)
+        public async Task<IActionResult> ExternalLoginConfirmation(ExternalLoginConfirmationViewModel model, string returnUrl = null, string clientId = null)
         {
             returnUrl = returnUrl ?? Url.Content("~/");
 
@@ -449,11 +458,24 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
                 if (result.Succeeded)
                 {
                     result = await _userManager.AddLoginAsync(user, info);
+
                     if (result.Succeeded)
                     {
-                        await _signInManager.SignInAsync(user, isPersistent: false);
+                        // Get default role if exists
+                        var client = await _clientStore.FindEnabledClientByIdAsync(clientId);
+                        var defaultRole = FindDefaultRegisterRole(client);
 
-                        return RedirectToLocal(returnUrl);
+                        if (!string.IsNullOrWhiteSpace(defaultRole))
+                        {
+                            result = await SafeAddToRoleAsync(user, defaultRole);
+                        }
+
+                        if (result.Succeeded)
+                        {
+                            await _signInManager.SignInAsync(user, isPersistent: false);
+
+                            return RedirectToLocal(returnUrl);
+                        }
                     }
                 }
 
@@ -577,9 +599,19 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
 
         [HttpGet]
         [AllowAnonymous]
-        public IActionResult Register(string returnUrl = null)
+        public async Task<IActionResult> Register(string returnUrl = null, string clientId = null)
         {
-            if (!_registerConfiguration.Enabled) return View("RegisterFailure");
+            if (!_registerConfiguration.Enabled && string.IsNullOrEmpty(clientId)) return View("RegisterFailure");
+
+
+            // Get default role if exists
+            var client = await _clientStore.FindEnabledClientByIdAsync(clientId);
+            var defaultRole = FindDefaultRegisterRole(client);
+
+            if(!_registerConfiguration.Enabled && string.IsNullOrWhiteSpace(defaultRole))
+                return View("RegisterFailure");
+
+            ViewData["ClientId"] = clientId;
 
             ViewData["ReturnUrl"] = returnUrl;
 
@@ -594,13 +626,17 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
         [HttpPost]
         [AllowAnonymous]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Register(RegisterViewModel model, string returnUrl = null, bool IsCalledFromRegisterWithoutUsername = false)
+        public async Task<IActionResult> Register(RegisterViewModel model, string returnUrl = null, bool IsCalledFromRegisterWithoutUsername = false, string clientId = null)
         {
-            if (!_registerConfiguration.Enabled) return View("RegisterFailure");
+            if (!_registerConfiguration.Enabled && string.IsNullOrEmpty(clientId)) return View("RegisterFailure");
 
             returnUrl ??= Url.Content("~/");
 
             ViewData["ReturnUrl"] = returnUrl;
+
+            // Get default role if exists
+            var client = await _clientStore.FindEnabledClientByIdAsync(clientId);
+            var defaultRole = FindDefaultRegisterRole(client);
 
             if (!ModelState.IsValid) return View(model);
 
@@ -610,23 +646,32 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
                 Email = model.Email
             };
 
+
             var result = await _userManager.CreateAsync(user, model.Password);
             if (result.Succeeded)
             {
-                var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-                code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
-                var callbackUrl = Url.Action("ConfirmEmail", "Account", new { userId = user.Id, code }, HttpContext.Request.Scheme);
-
-                await _emailSender.SendEmailAsync(model.Email, _localizer["ConfirmEmailTitle"], _localizer["ConfirmEmailBody", HtmlEncoder.Default.Encode(callbackUrl)]);
-
-                if (_identityOptions.SignIn.RequireConfirmedAccount)
+                if (!string.IsNullOrWhiteSpace(defaultRole))
                 {
-                    return View("RegisterConfirmation");
+                    result = await SafeAddToRoleAsync(user, defaultRole);
                 }
-                else
+
+                if (result.Succeeded)
                 {
-                    await _signInManager.SignInAsync(user, isPersistent: false);
-                    return LocalRedirect(returnUrl);
+                    var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+                    code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+                    var callbackUrl = Url.Action("ConfirmEmail", "Account", new { userId = user.Id, code }, HttpContext.Request.Scheme);
+
+                    await _emailSender.SendEmailAsync(model.Email, _localizer["ConfirmEmailTitle"], _localizer["ConfirmEmailBody", HtmlEncoder.Default.Encode(callbackUrl)]);
+
+                    if (_identityOptions.SignIn.RequireConfirmedAccount)
+                    {
+                        return View("RegisterConfirmation");
+                    }
+                    else
+                    {
+                        await _signInManager.SignInAsync(user, isPersistent: false);
+                        return LocalRedirect(returnUrl);
+                    }
                 }
             }
 
@@ -650,10 +695,22 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
             }
         }
 
+        private async Task<IdentityResult> SafeAddToRoleAsync(TUser user, string role)
+        {
+            try
+            {
+                return await _userManager.AddToRoleAsync(user, role);
+            }
+            catch (Exception ex)
+            {
+                return IdentityResult.Failed(new IdentityError() { Code = "RoleInvalid", Description = ex.Message });
+            }
+        }
+
         [HttpPost]
         [AllowAnonymous]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> RegisterWithoutUsername(RegisterWithoutUsernameViewModel model, string returnUrl = null)
+        public async Task<IActionResult> RegisterWithoutUsername(RegisterWithoutUsernameViewModel model, string returnUrl = null, string clientId = null)
         {
             var registerModel = new RegisterViewModel
             {
@@ -663,7 +720,7 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
                 ConfirmPassword = model.ConfirmPassword
             };
 
-            return await Register(registerModel, returnUrl, true);
+            return await Register(registerModel, returnUrl, true, clientId);
         }
 
         /*****************************************/
@@ -690,6 +747,8 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
         private async Task<LoginViewModel> BuildLoginViewModelAsync(string returnUrl)
         {
             var context = await _interaction.GetAuthorizationContextAsync(returnUrl);
+            var hasDefaultRole = !string.IsNullOrWhiteSpace(FindDefaultRegisterRole(context?.Client));
+
             if (context?.IdP != null && await _schemeProvider.GetSchemeAsync(context.IdP) != null)
             {
                 var local = context.IdP == IdentityServerConstants.LocalIdentityProvider;
@@ -707,6 +766,9 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
                     vm.ExternalProviders = new[] { new ExternalProvider { AuthenticationScheme = context.IdP } };
                 }
 
+                if(hasDefaultRole)
+                    vm.ClientId = context.Client.ClientId;
+
                 return vm;
             }
 
@@ -721,6 +783,7 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
                 }).ToList();
 
             var allowLocal = true;
+
             if (context?.Client.ClientId != null)
             {
                 var client = await _clientStore.FindEnabledClientByIdAsync(context.Client.ClientId);
@@ -735,14 +798,33 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
                 }
             }
 
-            return new LoginViewModel
+            var loginModel = new LoginViewModel
             {
                 AllowRememberLogin = AccountOptions.AllowRememberLogin,
                 EnableLocalLogin = allowLocal && AccountOptions.AllowLocalLogin,
                 ReturnUrl = returnUrl,
                 Username = context?.LoginHint,
                 ExternalProviders = providers.ToArray()
-            };
+            }; 
+
+            if (hasDefaultRole)
+                loginModel.ClientId = context.Client.ClientId;
+
+            return loginModel;
+        }
+
+        private string FindDefaultRegisterRole(Client client)
+        {
+            if (client?.Properties?.ContainsKey("RegisterWithRole") ?? false)
+            {
+                var registerWithRole = client.Properties["RegisterWithRole"];
+
+                if (!string.IsNullOrWhiteSpace(registerWithRole))
+                {
+                    return registerWithRole;
+                }
+            }
+            return null;
         }
 
         private async Task<LoginViewModel> BuildLoginViewModelAsync(LoginInputModel model)

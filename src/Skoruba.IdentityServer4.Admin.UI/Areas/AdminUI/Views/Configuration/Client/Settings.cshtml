@@ -18,30 +18,34 @@
 				}
 			</div>
 		</nav>
-		<div class="tab-content" id="nav-tabContent">
-			<div class="tab-pane show active" id="nav-name" role="tabpanel" aria-labelledby="nav-name-tab">
-				@await Html.PartialAsync("Client/Section/Name")
-			</div>
 
-			@if (Model.Id != 0)
-			{
-				<div class="tab-pane" id="nav-basics" role="tabpanel" aria-labelledby="nav-basics-tab">
-					@await Html.PartialAsync("Client/Section/Basics")
-				</div>
+        <div class="tab-content" id="nav-tabContent">
 
-				<div class="tab-pane" id="nav-authentication" role="tabpanel" aria-labelledby="nav-authentication-tab">
-					@await Html.PartialAsync("Client/Section/Authentication")
-				</div>
-				<div class="tab-pane" id="nav-token" role="tabpanel" aria-labelledby="nav-token-tab">
-					@await Html.PartialAsync("Client/Section/Token")
-				</div>
-				<div class="tab-pane" id="nav-consent" role="tabpanel" aria-labelledby="nav-consent-tab">
-					@await Html.PartialAsync("Client/Section/Consent")
-				</div>
-				<div class="tab-pane" id="nav-deviceflow" role="tabpanel" aria-labelledby="nav-deviceflow-tab">
-					@await Html.PartialAsync("Client/Section/DeviceFlow")
-				</div>
-			}
-		</div>
+            <p>To setup Register with a Default Role go to Basics->Manage Client Properties.</p>
+
+            <div class="tab-pane show active" id="nav-name" role="tabpanel" aria-labelledby="nav-name-tab">
+                @await Html.PartialAsync("Client/Section/Name")
+            </div>
+
+            @if (Model.Id != 0)
+            {
+                <div class="tab-pane" id="nav-basics" role="tabpanel" aria-labelledby="nav-basics-tab">
+                    @await Html.PartialAsync("Client/Section/Basics")
+                </div>
+
+                <div class="tab-pane" id="nav-authentication" role="tabpanel" aria-labelledby="nav-authentication-tab">
+                    @await Html.PartialAsync("Client/Section/Authentication")
+                </div>
+                <div class="tab-pane" id="nav-token" role="tabpanel" aria-labelledby="nav-token-tab">
+                    @await Html.PartialAsync("Client/Section/Token")
+                </div>
+                <div class="tab-pane" id="nav-consent" role="tabpanel" aria-labelledby="nav-consent-tab">
+                    @await Html.PartialAsync("Client/Section/Consent")
+                </div>
+                <div class="tab-pane" id="nav-deviceflow" role="tabpanel" aria-labelledby="nav-deviceflow-tab">
+                    @await Html.PartialAsync("Client/Section/DeviceFlow")
+                </div>
+            }
+        </div>
 	</div>
 </div>

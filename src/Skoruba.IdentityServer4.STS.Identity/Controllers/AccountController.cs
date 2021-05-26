@@ -4,12 +4,6 @@
 // Original file: https://github.com/IdentityServer/IdentityServer4.Samples
 // Modified by Jan Škoruba
 
-using System;
-using System.Linq;
-using System.Security.Claims;
-using System.Text;
-using System.Text.Encodings.Web;
-using System.Threading.Tasks;
 using IdentityModel;
 using IdentityServer4;
 using IdentityServer4.Events;
@@ -24,11 +18,18 @@ using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
+using Skoruba.IdentityServer4.Shared.Configuration.Configuration;
 using Skoruba.IdentityServer4.Shared.Configuration.Configuration.Identity;
 using Skoruba.IdentityServer4.STS.Identity.Configuration;
 using Skoruba.IdentityServer4.STS.Identity.Helpers;
 using Skoruba.IdentityServer4.STS.Identity.Helpers.Localization;
 using Skoruba.IdentityServer4.STS.Identity.ViewModels.Account;
+using System;
+using System.Linq;
+using System.Security.Claims;
+using System.Text;
+using System.Text.Encodings.Web;
+using System.Threading.Tasks;
 
 namespace Skoruba.IdentityServer4.STS.Identity.Controllers
 {
@@ -815,9 +816,9 @@ namespace Skoruba.IdentityServer4.STS.Identity.Controllers
 
         private string FindDefaultRegisterRole(Client client)
         {
-            if (client?.Properties?.ContainsKey("RegisterWithRole") ?? false)
+            if (client?.Properties?.ContainsKey(SharedConsts.DefaultRoleOnRegisterKey) ?? false)
             {
-                var registerWithRole = client.Properties["RegisterWithRole"];
+                var registerWithRole = client.Properties[SharedConsts.DefaultRoleOnRegisterKey];
 
                 if (!string.IsNullOrWhiteSpace(registerWithRole))
                 {
